@@ -2,25 +2,42 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>🍥 GitHub-Powered Masonry Gallery</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tabbed, Date-Sorted Masonry Gallery</title>
   <style>
-    * { box-sizing: border-box; margin:0; padding:0; }
+    * { box-sizing:border-box; margin:0; padding:0; }
     body {
+      font-family:sans-serif;
       padding:1em;
       background:#f5f5f5;
-      font-family:sans-serif;
     }
+    /* TAB BAR */
+    .tabs {
+      display:flex;
+      gap:.5em;
+      margin-bottom:1em;
+    }
+    .tabs button {
+      flex:1;
+      padding:.5em;
+      border:none;
+      background:#ddd;
+      cursor:pointer;
+      font-weight:bold;
+      transition:background .2s;
+    }
+    .tabs button.active { background:#aaa; }
+    /* GALLERY LAYOUT */
     .gallery {
-  column-width: 250px;  /* ideal width for big screens */
-  column-gap: 1em;
-}
-@media (max-width: 600px) {
-  .gallery {
-    column-count: 2;     /* always two columns */
-    column-width: auto;  /* let them shrink/fluid */
-  }
-}
+      column-count:2;      /* mobile: 2 columns */
+      column-gap:1em;
+    }
+    @media (min-width:600px) {
+      .gallery {
+        column-count:auto; /* reset for desktop */
+        column-width:250px;/* ideal width */
+      }
+    }
     .gallery img {
       width:100%;
       margin-bottom:1em;
@@ -29,90 +46,95 @@
       cursor:zoom-in;
       transition:transform .2s;
     }
-    .gallery img:hover {
-      transform:scale(1.03);
-    }
-    @media (max-width:600px) {
-      .gallery { column-count:2; }
-    }
+    .gallery img:hover { transform:scale(1.03); }
   </style>
 </head>
 <body>
+
+  <!-- make sure this is here! -->
+  <div class="tabs" id="tabs"></div>
   <div class="gallery" id="gallery"></div>
 
   <script>
-    // ─── CONFIGURE THESE ───────────────────────────────────────────
+    // ─── CONFIG ────────────────────────────────────────────────
     const user   = 'pierropropeller';
-    const repo   = 'Anniversary-Album';
-    const branch = 'main';
-    const folder = 'media';  // folder path in your repo
+    const repo   = 'Anniversary_Album';
+    const branch = 'main';        // or whichever branch you use
+    const folder = 'media';       // your folder path
     const treeURL = 
       `https://api.github.com/repos/${user}/${repo}/git/trees/${branch}?recursive=1`;
 
-      async function loadGallery() {
-    const resp      = await fetch(treeURL);
-    const { tree }  = await resp.json();
-
-    // 1) filter your images…
-    const files = tree.filter(f =>
-      f.type === 'blob'
-      && f.path.startsWith(folder + '/')
-      && /\.(jpe?g|png|gif|webp|svg)$/i.test(f.path)
-    );
-
-    // 2) map → {url,name,sub,date}
-    const items = await Promise.all(files.map(async f => {
-      const url   = `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${f.path}`;
-      const parts = f.path.split('/');
-      const sub   = parts[1];
-      const name  = parts.pop();
-      const date  = await getLastModified(url);
-      return { url, name, sub, date };
-    }));
-
-    // 3) sort newest→oldest
-    items.sort((a,b) => b.date - a.date);
-
-    // 4) build tabs
-    const tabs = [...new Set(items.map(i => i.sub))];
-    const tabsEl = document.getElementById('tabs');
-    tabs.forEach((sub,i) => {
-      const btn = document.createElement('button');
-      btn.textContent = sub;
-      btn.dataset.sub = sub;
-      btn.className   = i===0 ? 'active' : '';
-      btn.onclick     = () => switchTab(sub, btn);
-      tabsEl.appendChild(btn);
-    });
-
-    // ←–– BUGFIX: assign _galleryItems BEFORE calling switchTab
-    window._galleryItems = items;
-
-    // 5) initial render
-    if (tabs.length) switchTab(tabs[0]);
-  }
-
-  function switchTab(sub, btn = null) {
-    // update active tab styling
-    if (btn) {
-      document.querySelectorAll('.tabs button')
-              .forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+    // ─── UTIL: fetch a file’s Last-Modified header ─────────────
+    async function getLastModified(url) {
+      const res = await fetch(url, { method: 'HEAD' });
+      const lm  = res.headers.get('last-modified');
+      return lm ? new Date(lm) : new Date();
     }
-    // render the images for this tab
-    const gallery = document.getElementById('gallery');
-    gallery.innerHTML = '';
-    window._galleryItems
-      .filter(i => i.sub === sub)
-      .forEach(i => {
-        const img = document.createElement('img');
-        img.src = i.url;
-        img.alt = i.name;
-        gallery.appendChild(img);
-      });
-  }
 
-  window.addEventListener('DOMContentLoaded', loadGallery);
-</script>
+    // ─── MAIN LOADER ────────────────────────────────────────────
+    async function loadGallery() {
+      const resp     = await fetch(treeURL);
+      const { tree } = await resp.json();
+
+      // 1) pick out only your image files under “media/…”
+      const files = tree.filter(f =>
+        f.type === 'blob' &&
+        f.path.startsWith(folder + '/') &&
+        /\.(jpe?g|png|gif|webp|svg)$/i.test(f.path)
+      );
+
+      // 2) map → { url, name, subfolder, date }
+      const items = await Promise.all(files.map(async f => {
+        const url   = `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${f.path}`;
+        const parts = f.path.split('/');
+        const sub   = parts[1];      // “1” or “2”
+        const name  = parts.pop();
+        const date  = await getLastModified(url);
+        return { url, name, sub, date };
+      }));
+
+      // 3) sort newest→oldest
+      items.sort((a,b) => b.date - a.date);
+
+      // 4) build your tabs
+      const tabsEl = document.getElementById('tabs');
+      const subs   = [ ...new Set(items.map(i => i.sub)) ];
+      subs.forEach((sub, i) => {
+        const btn = document.createElement('button');
+        btn.textContent    = sub;
+        btn.dataset.sub    = sub;
+        btn.className      = i===0 ? 'active' : '';
+        btn.onclick        = () => switchTab(sub, btn);
+        tabsEl.appendChild(btn);
+      });
+
+      // 5) stash and render the first tab
+      window._galleryItems = items;
+      if (subs.length) switchTab(subs[0]);
+    }
+
+    // ─── TAB SWITCHER ───────────────────────────────────────────
+    function switchTab(sub, btn = null) {
+      // highlight the active button
+      if (btn) {
+        document.querySelectorAll('.tabs button')
+                .forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+      // render images for this subfolder
+      const gallery = document.getElementById('gallery');
+      gallery.innerHTML = '';
+      window._galleryItems
+            .filter(i => i.sub === sub)
+            .forEach(i => {
+              const img = document.createElement('img');
+              img.src = i.url;
+              img.alt = i.name;
+              gallery.appendChild(img);
+            });
+    }
+
+    window.addEventListener('DOMContentLoaded', loadGallery);
+  </script>
 </body>
 </html>
