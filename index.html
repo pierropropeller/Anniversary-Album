@@ -12,14 +12,14 @@
       font-family:sans-serif;
     }
     .gallery {
-        column-width: 250px;  /* ideal width for big screens */
-        column-gap: 1em;
-        }
-        @media (max-width: 600px) {
-        .gallery {
-           column-count: 2;     /* always two columns */
-          column-width: auto;  /* let them shrink/fluid */
-         }
+      column-count: 2;       /* mobile-first: two equal columns */
+      column-gap: 1em;
+    }
+    @media (min-width: 600px) {
+      .gallery {
+        column-count: auto;   /* reset to auto-flow */
+        column-width: 250px;  /* ideal 250px columns */
+      }
     }
     .gallery img {
       width:100%;
