@@ -2,23 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>🍥 GitHub-Powered Masonry Gallery</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tabbed, Date-Sorted Masonry Gallery</title>
   <style>
-    * { box-sizing: border-box; margin:0; padding:0; }
+    * { box-sizing:border-box; margin:0; padding:0; }
     body {
+      font-family:sans-serif;
       padding:1em;
       background:#f5f5f5;
-      font-family:sans-serif;
     }
+    .tabs {
+      display:flex; gap:.5em;
+      margin-bottom:1em;
+    }
+    .tabs button {
+      flex:1;
+      padding:.5em;
+      border:none;
+      background:#ddd;
+      cursor:pointer;
+      font-weight:bold;
+      transition:background .2s;
+    }
+    .tabs button.active { background:#aaa; }
     .gallery {
-      column-count: 2;       /* mobile-first: two equal columns */
-      column-gap: 1em;
+      column-count:2;    /* mobile: always 2 columns */
+      column-gap:1em;
     }
-    @media (min-width: 600px) {
+    @media (min-width:600px) {
       .gallery {
-        column-count: auto;   /* reset to auto-flow */
-        column-width: 250px;  /* ideal 250px columns */
+        column-count:auto;   /* reset */
+        column-width:250px;  /* ideal width */
       }
     }
     .gallery img {
@@ -29,47 +43,90 @@
       cursor:zoom-in;
       transition:transform .2s;
     }
-    .gallery img:hover {
-      transform:scale(1.03);
-    }
-    @media (max-width:600px) {
-      .gallery { column-count:2; }
-    }
+    .gallery img:hover { transform:scale(1.03); }
   </style>
 </head>
 <body>
+  <div class="tabs" id="tabs"></div>
   <div class="gallery" id="gallery"></div>
 
   <script>
-    // ─── CONFIGURE THESE ───────────────────────────────────────────
+    // ─── CONFIG ─────────────────────────────────────────────────
     const user   = 'pierropropeller';
     const repo   = 'Anniversary-Album';
     const branch = 'main';
-    const folder = 'media';  // folder path in your repo
-    const treeURL = 
-      `https://api.github.com/repos/${user}/${repo}/git/trees/${branch}?recursive=1`;
+    const folder = 'media';
+    const treeURL= `https://api.github.com/repos/${user}/${repo}/git/trees/${branch}?recursive=1`;
 
+    // ─── UTIL: HEAD-fetch “Last-Modified” ────────────────────────
+    async function getLastModified(url) {
+      const res = await fetch(url, { method: 'HEAD' });
+      return res.headers.get('last-modified')
+        ? new Date(res.headers.get('last-modified'))
+        : new Date();
+    }
+
+    // ─── LOAD & RENDER ──────────────────────────────────────────
     async function loadGallery() {
-      const res  = await fetch(treeURL);
-      const { tree } = await res.json();
-      // filter for files in our media folder with image extensions
+      const resp = await fetch(treeURL);
+      const { tree } = await resp.json();
+
+      // filter only images under media/<subfolder>/
       const files = tree.filter(f =>
-        f.type === 'blob' &&
+        f.type==='blob' &&
         f.path.startsWith(folder + '/') &&
         /\.(jpe?g|png|gif|webp|svg)$/i.test(f.path)
       );
-      if (!files.length) {
-        document.body.innerHTML = '<p>No images found in your media folder!</p>';
-        return;
-      }
 
-      const gallery = document.getElementById('gallery');
-      files.forEach(f => {
-        const img = document.createElement('img');
-        img.src = `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${f.path}`;
-        img.alt = f.path.split('/').pop();
-        gallery.appendChild(img);
+      // build an array of { url, name, folder, date }
+      const items = await Promise.all(files.map(async f => {
+        const url    = `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${f.path}`;
+        const parts  = f.path.split('/');
+        const name   = parts.pop();
+        const sub    = parts[1];  // “1” or “2”
+        const date   = await getLastModified(url);
+        return { url, name, sub, date };
+      }));
+
+      // sort newest→oldest
+      items.sort((a,b)=> b.date - a.date);
+
+      // make tabs for each unique subfolder
+      const tabs = [...new Set(items.map(i=>i.sub))];
+      const tabsEl = document.getElementById('tabs');
+      tabs.forEach((sub,i) => {
+        const btn = document.createElement('button');
+        btn.textContent    = sub;
+        btn.dataset.sub    = sub;
+        btn.className      = i===0 ? 'active' : '';
+        btn.onclick        = () => switchTab(sub, btn);
+        tabsEl.appendChild(btn);
       });
+
+      // initial render
+      switchTab(tabs[0]);
+      window._galleryItems = items;
+    }
+
+    // ─── TAB SWITCHER ───────────────────────────────────────────
+    function switchTab(sub, btn=null) {
+      // update active button
+      if(btn){
+        document.querySelectorAll('.tabs button')
+                .forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+      // filter & render
+      const gallery = document.getElementById('gallery');
+      gallery.innerHTML = '';
+      window._galleryItems
+        .filter(i => i.sub === sub)
+        .forEach(i => {
+          const img = document.createElement('img');
+          img.src = i.url;
+          img.alt = i.name;
+          gallery.appendChild(img);
+        });
     }
 
     window.addEventListener('DOMContentLoaded', loadGallery);
