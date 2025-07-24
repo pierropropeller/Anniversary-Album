@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>🍥 GitHub-Powered Masonry Gallery</title>
+  <style>
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body {
+      padding:1em;
+      background:#f5f5f5;
+      font-family:sans-serif;
+    }
+    .gallery {
+      column-width:250px;
+      column-gap:1em;
+    }
+    .gallery img {
+      width:100%;
+      margin-bottom:1em;
+      display:inline-block;
+      break-inside:avoid;
+      cursor:zoom-in;
+      transition:transform .2s;
+    }
+    .gallery img:hover {
+      transform:scale(1.03);
+    }
+    @media (max-width:600px) {
+      .gallery { column-count:2; }
+    }
+  </style>
+</head>
+<body>
+  <div class="gallery" id="gallery"></div>
+
+  <script>
+    // ─── CONFIGURE THESE ───────────────────────────────────────────
+    const user   = 'pierropropeller';
+    const repo   = 'Anniversary-Album';
+    const branch = 'main';
+    const folder = 'media';  // folder path in your repo
+    const treeURL = 
+      `https://api.github.com/repos/${user}/${repo}/git/trees/${branch}?recursive=1`;
+
+    async function loadGallery() {
+      const res  = await fetch(treeURL);
+      const { tree } = await res.json();
+      // filter for files in our media folder with image extensions
+      const files = tree.filter(f =>
+        f.type === 'blob' &&
+        f.path.startsWith(folder + '/') &&
+        /\.(jpe?g|png|gif|webp|svg)$/i.test(f.path)
+      );
+      if (!files.length) {
+        document.body.innerHTML = '<p>No images found in your media folder!</p>';
+        return;
+      }
+
+      const gallery = document.getElementById('gallery');
+      files.forEach(f => {
+        const img = document.createElement('img');
+        img.src = `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${f.path}`;
+        img.alt = f.path.split('/').pop();
+        gallery.appendChild(img);
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', loadGallery);
+  </script>
+</body>
+</html>
